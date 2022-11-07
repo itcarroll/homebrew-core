@@ -1,10 +1,10 @@
 class Hdf5 < Formula
   desc "File format designed to store large amounts of data"
   homepage "https://www.hdfgroup.org/HDF5"
-  url "https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.2/src/hdf5-1.12.2.tar.bz2"
-  sha256 "1a88bbe36213a2cea0c8397201a459643e7155c9dc91e062675b3fb07ee38afe"
+  url "https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.2/src/CMake-hdf5-1.12.2.tar.gz"
+  sha256 "04621dd1b96426f7f7883d508657fb1ee579ddd22f4c38ababfd8a408abd6525"
   license "BSD-3-Clause"
-  revision 2
+  revision 3
   version_scheme 1
 
   # This regex isn't matching filenames within href attributes (as we normally
@@ -15,55 +15,34 @@ class Hdf5 < Formula
     regex(/>\s*hdf5[._-]v?(\d+(?:\.\d+)+)\.t/i)
   end
 
-  bottle do
-    sha256 cellar: :any,                 arm64_ventura:  "06113cd41180b8047be4a086f8a06ad9912a44520e95915a9aab75dc13e57c9d"
-    sha256 cellar: :any,                 arm64_monterey: "be3e935473b18d51e1d8fcd3ac08ab24084bad5304fca18f55811ffd21bb4c74"
-    sha256 cellar: :any,                 arm64_big_sur:  "86cb013d39a9b59dc71fbcdb12fcc2051f2e3fa3abcc47e49a44b9447ada3a49"
-    sha256 cellar: :any,                 monterey:       "4857771f10068ad7bde8c0fd7bad17069a3ccd58862a0ab19ce1f093dc173ab4"
-    sha256 cellar: :any,                 big_sur:        "42b85f81e839ad8e5c0667d13b55ab56e83336a00809538c4bbb84c72825c00d"
-    sha256 cellar: :any,                 catalina:       "c4a7d6bc2b3c233b802f8584e30236eb7d62f911274f93c99321bcae61df49cb"
-    sha256 cellar: :any_skip_relocation, x86_64_linux:   "308e114d6b3c43eec5e6933d2fd823d59dc1ec0e0444598278f9599cacd73e28"
-  end
-
-  depends_on "autoconf" => :build
-  depends_on "automake" => :build
-  depends_on "libtool" => :build
+  depends_on "cmake" => :build
   depends_on "gcc" # for gfortran
   depends_on "libaec"
 
-  uses_from_macos "zlib"
+  uses_from_macos "zlib" #FIXME need to implement with cmake
 
   conflicts_with "hdf5-mpi", because: "hdf5-mpi is a variant of hdf5, one can only use one or the other"
 
   def install
-    inreplace %w[c++/src/h5c++.in fortran/src/h5fc.in bin/h5cc.in],
-              "${libdir}/libhdf5.settings",
-              "#{pkgshare}/libhdf5.settings"
+    # ENV.deparallelize  # if your formula fails when building in parallel
+    # Remove unrecognized options if warned by configure
+    # https://rubydoc.brew.sh/Formula.html#std_configure_args-instance_method
 
-    inreplace "src/Makefile.am",
-              "settingsdir=$(libdir)",
-              "settingsdir=#{pkgshare}"
-
-    system "autoreconf", "--force", "--install", "--verbose"
-
-    args = %W[
-      --disable-dependency-tracking
-      --disable-silent-rules
-      --enable-build-mode=production
-      --enable-fortran
-      --enable-cxx
-      --prefix=#{prefix}
-      --with-szlib=#{Formula["libaec"].opt_prefix}
-    ]
-    args << "--with-zlib=#{Formula["zlib"].opt_prefix}" if OS.linux?
-
-    system "./configure", *args
-
-    # Avoid shims in settings file
-    inreplace "src/libhdf5.settings", Superenv.shims_path/ENV.cxx, ENV.cxx
-    inreplace "src/libhdf5.settings", Superenv.shims_path/ENV.cc, ENV.cc
-
-    system "make", "install"
+    # FIXME
+    #   netcdf and gdal cannot find hdf5 after install, perhaps because the
+    #   installed path is /usr/local/Cellar/hdf5/1.13.3/HDF_Group/HDF5/1.13.3/.
+    #   the INSTALLDIR replacement below appears to have no effect.
+    inreplace "HDF5config.cmake",
+              "INSTALLDIR \"${CTEST_SCRIPT_DIRECTORY}/HDF_Group/HDF5/${CTEST_SOURCE_VERSION}\"",
+              "INSTALLDIR \"${CTEST_SCRIPT_DIRECTORY}\""
+    # FIXME
+    #  Homebrew advises passing options as command line args, but this may not
+    #  be possible while using the `ctest -S` pattern in `./build-unix.sh`
+    inreplace "HDF5options.cmake",
+              "-DHDF5_BUILD_FORTRAN:BOOL=OFF",
+              "-DHDF5_BUILD_FORTRAN:BOOL=ON"
+    system "./build-unix.sh"
+    system "./HDF5-1.13.3-Darwin.sh --skip-license --exclude-subdir --prefix=#{prefix}"
   end
 
   test do
